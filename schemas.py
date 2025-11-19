@@ -11,17 +11,20 @@ Model name is converted to lowercase for the collection name:
 - BlogPost -> "blogs" collection
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
 from datetime import datetime
 
-# Core user schema (example/reference)
-class User(BaseModel):
-    name: str = Field(..., description="Full name")
-    email: str = Field(..., description="Email address")
-    address: str = Field(..., description="Address")
-    age: Optional[int] = Field(None, ge=0, le=120, description="Age in years")
-    is_active: bool = Field(True, description="Whether user is active")
+# Auth/User schemas
+class AuthUser(BaseModel):
+    """
+    Authentication user collection schema
+    Collection name: "authuser"
+    """
+    email: EmailStr = Field(..., description="Unique email")
+    name: Optional[str] = Field(None, description="Display name")
+    password_hash: str = Field(..., description="Hashed password")
+    is_active: bool = Field(True)
 
 # E-commerce schemas
 class Product(BaseModel):
@@ -33,7 +36,8 @@ class Product(BaseModel):
     description: Optional[str] = Field(None, description="Product description")
     price: float = Field(..., ge=0, description="Price in dollars")
     category: str = Field(..., description="Product category")
-    image: Optional[str] = Field(None, description="Image URL")
+    image: Optional[str] = Field(None, description="Primary image URL")
+    images: Optional[List[str]] = Field(default=None, description="Additional image URLs")
     in_stock: bool = Field(True, description="Whether product is in stock")
 
 class OrderItem(BaseModel):
@@ -49,7 +53,7 @@ class Order(BaseModel):
     Collection name: "order"
     """
     customer_name: str = Field(...)
-    customer_email: str = Field(...)
+    customer_email: EmailStr = Field(...)
     customer_address: str = Field(...)
     items: List[OrderItem] = Field(...)
     subtotal: float = Field(..., ge=0)

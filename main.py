@@ -1,11 +1,14 @@
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel, EmailStr
 from typing import List, Optional
+from bson import ObjectId
+import hashlib
 
 from database import db, create_document, get_documents
-from schemas import Product, Order, OrderItem
+from schemas import Product, Order, OrderItem, AuthUser
 
 app = FastAPI()
 
@@ -16,6 +19,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+security = HTTPBasic()
 
 @app.get("/")
 def read_root():
@@ -46,6 +51,18 @@ def list_products(category: Optional[str] = None, q: Optional[str] = None, limit
 class ProductCreate(Product):
     pass
 
+@app.get("/api/products/{product_id}")
+def get_product(product_id: str):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+    try:
+        doc = db["product"].find_one({"_id": ObjectId(product_id)})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Product not found")
+        return serialize_doc(doc)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid product id")
+
 @app.post("/api/products", status_code=201)
 def create_product(product: ProductCreate):
     inserted_id = create_document("product", product)
@@ -55,12 +72,12 @@ def create_product(product: ProductCreate):
 def seed_products():
     """Seed database with a small catalog for demo purposes"""
     demo = [
-        {"title":"Wireless Headphones","description":"Noise-cancelling over-ear with 30h battery","price":129.99,"category":"Electronics","image":"https://images.unsplash.com/photo-1518440563236-3d487397c3e5?q=80&w=1200&auto=format&fit=crop"},
-        {"title":"Smart Watch","description":"Fitness tracking, messages, and more","price":199.00,"category":"Electronics","image":"https://images.unsplash.com/photo-1519400197429-404ae1a05fa1?q=80&w=1200&auto=format&fit=crop"},
-        {"title":"Espresso Maker","description":"Barista-quality coffee at home","price":249.50,"category":"Home","image":"https://images.unsplash.com/photo-1503481766315-7a586b20f66b?q=80&w=1200&auto=format&fit=crop"},
-        {"title":"Running Shoes","description":"Lightweight and comfortable for daily runs","price":89.99,"category":"Fashion","image":"https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=1200&auto=format&fit=crop"},
-        {"title":"Backpack","description":"Durable everyday carry with 20L capacity","price":59.00,"category":"Accessories","image":"https://images.unsplash.com/photo-1514477917009-389c76a86b68?q=80&w=1200&auto=format&fit=crop"},
-        {"title":"LED Desk Lamp","description":"Adjustable brightness, warm/cool modes","price":34.95,"category":"Home","image":"https://images.unsplash.com/photo-1511255183209-e6f31b0289ea?q=80&w=1200&auto=format&fit=crop"}
+        {"title":"Wireless Headphones","description":"Noise-cancelling over-ear with 30h battery","price":129.99,"category":"Electronics","image":"https://images.unsplash.com/photo-1518440563236-3d487397c3e5?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1518440563236-3d487397c3e5?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1517841905240-472988babdf9?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Smart Watch","description":"Fitness tracking, messages, and more","price":199.00,"category":"Electronics","image":"https://images.unsplash.com/photo-1519400197429-404ae1a05fa1?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1519400197429-404ae1a05fa1?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1517433456452-f9633a875f6f?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Espresso Maker","description":"Barista-quality coffee at home","price":249.50,"category":"Home","image":"https://images.unsplash.com/photo-1503481766315-7a586b20f66b?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1503481766315-7a586b20f66b?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1494314671902-399b18174975?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Running Shoes","description":"Lightweight and comfortable for daily runs","price":89.99,"category":"Fashion","image":"https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1542291025-3f3f021d1a3a?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Backpack","description":"Durable everyday carry with 20L capacity","price":59.00,"category":"Accessories","image":"https://images.unsplash.com/photo-1514477917009-389c76a86b68?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1514477917009-389c76a86b68?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1520975916090-3105956dac38?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"LED Desk Lamp","description":"Adjustable brightness, warm/cool modes","price":34.95,"category":"Home","image":"https://images.unsplash.com/photo-1511255183209-e6f31b0289ea?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1511255183209-e6f31b0289ea?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1509395176047-4a66953fd231?q=80&w=1200&auto=format&fit=crop"]}
     ]
     inserted = 0
     for d in demo:
@@ -72,7 +89,7 @@ def seed_products():
 
 class CreateOrder(BaseModel):
     customer_name: str
-    customer_email: str
+    customer_email: EmailStr
     customer_address: str
     items: List[OrderItem]
 
@@ -93,6 +110,51 @@ def place_order(payload: CreateOrder):
     )
     inserted_id = create_document("order", order)
     return {"id": inserted_id, "subtotal": subtotal, "tax": tax, "total": total}
+
+# Payments (mock)
+class PaymentPayload(BaseModel):
+    amount: float
+    currency: str = "usd"
+    card_last4: str
+
+@app.post("/api/payments/charge")
+def charge_payment(payload: PaymentPayload):
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Invalid amount")
+    if len(payload.card_last4) != 4 or not payload.card_last4.isdigit():
+        raise HTTPException(status_code=400, detail="Invalid card")
+    # Mock charge id
+    return {"status": "succeeded", "charge_id": "ch_mock_" + payload.card_last4}
+
+# Basic auth (demo only)
+class RegisterPayload(BaseModel):
+    email: EmailStr
+    password: str
+    name: Optional[str] = None
+
+
+def hash_password(pw: str) -> str:
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+@app.post("/api/auth/register")
+def register_user(payload: RegisterPayload):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+    existing = db["authuser"].find_one({"email": payload.email})
+    if existing:
+        raise HTTPException(status_code=409, detail="Email already registered")
+    user = AuthUser(email=payload.email, name=payload.name, password_hash=hash_password(payload.password))
+    user_id = create_document("authuser", user)
+    return {"id": user_id, "email": payload.email, "name": payload.name}
+
+@app.post("/api/auth/login")
+def login_user(credentials: HTTPBasicCredentials = Depends(security)):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+    user = db["authuser"].find_one({"email": credentials.username})
+    if not user or user.get("password_hash") != hash_password(credentials.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return {"email": user["email"], "name": user.get("name")}
 
 @app.get("/test")
 def test_database():
