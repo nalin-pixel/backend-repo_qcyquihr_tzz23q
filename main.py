@@ -68,6 +68,27 @@ def create_product(product: ProductCreate):
     inserted_id = create_document("product", product)
     return {"id": inserted_id}
 
+class ProductImagesPayload(BaseModel):
+    image: Optional[str] = None
+    images: Optional[List[str]] = None
+
+@app.put("/api/products/{product_id}/images")
+def update_product_images(product_id: str, payload: ProductImagesPayload):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+    try:
+        oid = ObjectId(product_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid product id")
+    update_doc = {k: v for k, v in {"image": payload.image, "images": payload.images}.items() if v is not None}
+    if not update_doc:
+        raise HTTPException(status_code=400, detail="No images provided")
+    res = db["product"].update_one({"_id": oid}, {"$set": update_doc})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Product not found")
+    doc = db["product"].find_one({"_id": oid})
+    return serialize_doc(doc)
+
 @app.post("/api/products/seed")
 def seed_products():
     """Seed database with a small catalog for demo purposes"""
@@ -81,6 +102,28 @@ def seed_products():
     ]
     inserted = 0
     for d in demo:
+        create_document("product", d)
+        inserted += 1
+    return {"inserted": inserted}
+
+@app.post("/api/products/seed_more")
+def seed_more_products():
+    """Seed additional demo products with image galleries"""
+    more = [
+        {"title":"4K Action Camera","description":"Ultra HD action cam with waterproof case","price":149.99,"category":"Electronics","image":"https://images.unsplash.com/photo-1519183071298-a2962be96f83?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1519183071298-a2962be96f83?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1519183071298-44f9e1f7e4e9?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Mechanical Keyboard","description":"Hot-swappable switches, RGB lighting","price":109.0,"category":"Electronics","image":"https://images.unsplash.com/photo-1517336714731-489689fd1ca8?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1517336714731-489689fd1ca8?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1515879218367-8466d910aaa4?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Cotton T-Shirt","description":"Soft unisex tee in multiple colors","price":19.99,"category":"Fashion","image":"https://images.unsplash.com/photo-1520975916090-3105956dac38?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1520975916090-3105956dac38?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Denim Jacket","description":"Classic fit with premium denim","price":79.5,"category":"Fashion","image":"https://images.unsplash.com/photo-1503341455253-b2e723bb3dbb?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1503341455253-b2e723bb3dbb?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1516826957135-700dedea698c?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Ceramic Vase","description":"Handmade decorative vase","price":29.0,"category":"Home","image":"https://images.unsplash.com/photo-1523419409543-28356a564b24?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1523419409543-28356a564b24?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1496661415325-ef852f9e8e3b?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Nonstick Pan Set","description":"3-piece set with even heat distribution","price":59.99,"category":"Home","image":"https://images.unsplash.com/photo-1519677100203-a0e668c92439?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1519677100203-a0e668c92439?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1526312426976-593c2e615e87?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Trail Backpack 30L","description":"Hiking pack with breathable back panel","price":99.0,"category":"Accessories","image":"https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1514477917009-389c76a86b68?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Sunglasses","description":"UV400 polarized lenses","price":25.0,"category":"Accessories","image":"https://images.unsplash.com/photo-1511499767150-a48a237f0083?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1511499767150-a48a237f0083?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1502741338009-cac2772e18bc?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Yoga Mat","description":"Non-slip surface, 6mm thickness","price":22.5,"category":"Fitness","image":"https://images.unsplash.com/photo-1603988363607-e1e4a66962c3?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1603988363607-e1e4a66962c3?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1549057446-9f5c6ac91a04?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Foam Roller","description":"Deep tissue massage roller","price":18.0,"category":"Fitness","image":"https://images.unsplash.com/photo-1575052814086-f385e2e2ad1b?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1575052814086-f385e2e2ad1b?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1615755147400-61a43a4d7788?q=80&w=1200&auto=format&fit=crop"]},
+        {"title":"Desk Chair","description":"Ergonomic with lumbar support","price":139.0,"category":"Home","image":"https://images.unsplash.com/photo-1519710164239-da123dc03ef4?q=80&w=1200&auto=format&fit=crop","images":["https://images.unsplash.com/photo-1519710164239-da123dc03ef4?q=80&w=1200&auto=format&fit=crop","https://images.unsplash.com/photo-1489769002049-ccd828976a6c?q=80&w=1200&auto=format&fit=crop"]}
+    ]
+    inserted = 0
+    for d in more:
         create_document("product", d)
         inserted += 1
     return {"inserted": inserted}
